@@ -11,6 +11,7 @@ let recorder = HeartRateRecorder()
 let bleMonitor = BLEHeartRateMonitor()
 let antMonitor = ANTHeartRateMonitor()
 let exporter = FITExporter()
+let arnold = ArnoldCoach()
 
 var lastBLEHR: Int?
 var lastANTHR: Int?
@@ -28,7 +29,7 @@ func moveCursorUp(_ n: Int) {
     }
 }
 
-let displayLines = 14  // Number of lines in our display block
+let displayLines = 15  // Number of lines in our display block
 
 func renderDisplay() {
     moveCursorUp(displayLines)
@@ -48,10 +49,11 @@ func renderDisplay() {
     let bleStatus = bleMonitor.isConnected ? "Connected" : "Searching..."
     let antStatus = antMonitor.isConnected ? "Connected" : "Searching..."
     let recStatus = recorder.isRecording ? "● RECORDING" : "○ Stopped"
+    let arnoldStatus = arnold.enabled ? "ON" : "OFF"
 
     let lines = [
         "╔══════════════════════════════════════════════╗",
-        "║          ❤ Heart Rate Recorder               ║",
+        "║      ❤ Heart Rate Recorder (Arnold Ed.)     ║",
         "╠══════════════════════════════════════════════╣",
         "║  Current HR:  \(pad(hrStr, 30))║",
         "║  Average HR:  \(pad(avgStr, 30))║",
@@ -63,6 +65,7 @@ func renderDisplay() {
         "║  BLE:  \(pad(bleStatus, 37))║",
         "║  ANT+: \(pad(antStatus, 37))║",
         "║  Status: \(pad(recStatus, 35))║",
+        "║  Arnold: \(pad(arnoldStatus, 35))║",
         "╚══════════════════════════════════════════════╝",
     ]
 
@@ -87,6 +90,7 @@ func printStatus(_ msg: String) {
 bleMonitor.onHeartRate = { hr in
     lastBLEHR = hr
     recorder.addSample(heartRate: hr, source: .ble)
+    if recorder.isRecording { arnold.processHeartRate(hr) }
 }
 
 bleMonitor.onStatusChange = { msg in
@@ -102,6 +106,7 @@ bleMonitor.onDeviceFound = { msg in
 antMonitor.onHeartRate = { hr in
     lastANTHR = hr
     recorder.addSample(heartRate: hr, source: .ant)
+    if recorder.isRecording { arnold.processHeartRate(hr) }
 }
 
 antMonitor.onStatusChange = { msg in
@@ -117,6 +122,8 @@ func printHelp() {
       r / record   - Start recording
       s / stop     - Stop recording
       e / export   - Export to .FIT file
+      a / arnold   - Toggle Arnold voice coach on/off
+      v / voice    - Cycle through available voices
       q / quit     - Stop and exit
       h / help     - Show this help
 
@@ -185,9 +192,11 @@ stdinSource.setEventHandler {
     switch line {
     case "r", "record":
         recorder.startRecording()
+        arnold.speakEvent("Let's go! Time to pump that heart! Recording has started!")
         printStatus("Recording started. Press 's' to stop.")
     case "s", "stop":
         recorder.stopRecording()
+        arnold.speakEvent("Great workout! You are a champion! Now rest, and come back even stronger!")
         printStatus("Recording stopped. \(recorder.samples.count) samples captured.")
     case "e", "export":
         exportData()
@@ -202,6 +211,20 @@ stdinSource.setEventHandler {
         displayTimer?.invalidate()
         print("  Goodbye!")
         exit(0)
+    case "a", "arnold":
+        let newState = !arnold.enabled
+        arnold.setEnabled(newState)
+        if newState {
+            arnold.speakEvent("Arnold is back! I will push you to the limit!")
+        }
+        printStatus("Arnold coach: \(newState ? "ON" : "OFF")")
+    case "v", "voice":
+        let voices = ["Alex", "Daniel", "Fred", "Ralph", "Rishi"]
+        let currentIdx = voices.firstIndex(of: arnold.voice) ?? 0
+        let nextIdx = (currentIdx + 1) % voices.count
+        arnold.voice = voices[nextIdx]
+        arnold.speakEvent("This is \(arnold.voice). I will be your Arnold today!")
+        printStatus("Voice changed to: \(arnold.voice)")
     case "h", "help":
         printHelp()
     default:

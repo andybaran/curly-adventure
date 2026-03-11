@@ -43,6 +43,8 @@ Once running, the app scans for both BLE and ANT+ heart rate monitors automatica
 | `r` / `record` | Start recording heart rate data |
 | `s` / `stop` | Stop recording |
 | `e` / `export` | Export recording to .FIT file |
+| `a` / `arnold` | Toggle Arnold Schwarzenegger voice coach on/off |
+| `v` / `voice` | Cycle through available TTS voices |
 | `q` / `quit` | Stop, auto-export if data exists, and exit |
 | `h` / `help` | Show help |
 
@@ -71,6 +73,7 @@ Sources/
   ANTHeartRateMonitor.swift  - IOKit USB ANT+ stick communication
   HeartRateRecorder.swift    - HR data storage and statistics
   FITExporter.swift          - Garmin .FIT file format writer
+  ArnoldCoach.swift          - Arnold Schwarzenegger voice coach (TTS + quotes)
   Info.plist                 - Bluetooth permission description
 HeartRateRecorder.entitlements - App entitlements for Bluetooth + USB
 ```
@@ -89,3 +92,14 @@ HeartRateRecorder.entitlements - App entitlements for Bluetooth + USB
 
 **Permission denied errors:**
 - Run `codesign --entitlements HeartRateRecorder.entitlements -s - .build/release/HeartRateRecorder` to sign with entitlements
+
+## Arnold Voice Coach
+
+The app includes a motivational voice coach that reads Arnold Schwarzenegger-style quotes aloud based on your heart rate zone. It uses macOS built-in text-to-speech (`say` command).
+
+- Quotes are triggered every ~45 seconds during recording and on HR zone changes
+- The "Alex" voice at a slow speaking rate (160 WPM) gives the most dramatic effect
+- Press `v` to cycle through voices: Alex, Daniel, Fred, Ralph, Rishi
+- Press `a` to toggle the voice coach on/off
+
+**Tip:** For the best voice quality, install enhanced voices in System Settings > Accessibility > Spoken Content > System Voice > Manage Voices. The "Alex (Enhanced)" voice has significantly better quality.
