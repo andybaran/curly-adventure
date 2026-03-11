@@ -210,7 +210,7 @@ func renderWaveform(rows: Int) -> [String] {
 // MARK: - Terminal Display (Hospital Monitor)
 // ============================================================================
 
-let displayLines = 30
+let displayLines = 32
 
 func moveCursorUp(_ n: Int) {
     if n > 0 { print("\u{1B}[\(n)A", terminator: "") }
@@ -262,7 +262,8 @@ func renderDisplay() {
 
     // ┌─ Top bezel ─┐
     line("\(C.chrome)┌\(String(repeating: "─", count: w - 2))┐")
-    line("\(C.chrome)│\(C.bgDark)\(C.chromeLt)  CARDIAC MONITOR  \(C.whiteDim)MODEL HR-1000A\(C.chromeLt)          ● REC: \(recorder.isRecording ? "\(C.red)▶ ACTIVE" : "\(C.whiteDim)■ IDLE  ")\(C.chromeLt)    ARNOLD: \(arnold.enabled ? "\(C.amber)ON " : "\(C.whiteDim)OFF")\(C.reset)\(C.bgDark) \(C.chrome)│")
+    let muteIndicator = arnold.muted ? " \(C.red)🔇" : ""
+    line("\(C.chrome)│\(C.bgDark)\(C.chromeLt)  CARDIAC MONITOR  \(C.whiteDim)MODEL HR-1000A\(C.chromeLt)       ● REC: \(recorder.isRecording ? "\(C.red)▶ ACTIVE" : "\(C.whiteDim)■ IDLE  ")\(C.chromeLt)  ARNOLD: \(arnold.enabled ? "\(C.amber)ON " : "\(C.whiteDim)OFF")\(muteIndicator)\(C.reset)\(C.bgDark) \(C.chrome)│")
 
     // ┌─ ECG Section Header ─┐
     line("\(C.chrome)│\(C.bgDark)\(C.green) ╶─ ECG ─── LEAD II ──────────────────────────────────────────────────────\(C.reset)\(C.bgDark) \(C.chrome)│")
@@ -307,8 +308,11 @@ func renderDisplay() {
     let zoneBar = renderHRZoneBar(hr: hr, width: 60)
     line("\(C.chrome)│\(C.bgDark) \(C.whiteDim)ZONE \(zoneBar)\(C.reset)\(C.bgDark)         \(C.chrome)│")
 
-    // Bottom bezel
-    line("\(C.chrome)│\(C.bgDark)\(C.whiteDim)  [R]ecord [S]top [E]xport [A]rnold [V]oice [H]elp [Q]uit               \(C.reset)\(C.bgDark) \(C.chrome)│")
+    // Key legend (bottom right)
+    line("\(C.chrome)│\(C.bgDark)\(C.chrome) ─────────────────────────────────────────────────────────────────────────── \(C.chrome)│")
+    line("\(C.chrome)│\(C.bgDark)                                    \(C.whiteDim)R\(C.chromeLt) Record  \(C.whiteDim)S\(C.chromeLt) Stop   \(C.whiteDim)E\(C.chromeLt) Export  \(C.chrome)│")
+    line("\(C.chrome)│\(C.bgDark)                                    \(C.whiteDim)A\(C.chromeLt) Arnold  \(C.whiteDim)M\(C.chromeLt) Mute   \(C.whiteDim)V\(C.chromeLt) Voice   \(C.chrome)│")
+    line("\(C.chrome)│\(C.bgDark)                                    \(C.whiteDim)H\(C.chromeLt) Help    \(C.whiteDim)Q\(C.chromeLt) Quit             \(C.chrome)│")
     line("\(C.chrome)└\(String(repeating: "─", count: w - 2))┘\(C.reset)")
 
     print(output, terminator: "")
@@ -416,6 +420,7 @@ func printHelp() {
       s / stop     - Stop recording
       e / export   - Export to .FIT file
       a / arnold   - Toggle Arnold voice coach on/off
+      m / mute     - Mute/unmute voice quotes
       v / voice    - Cycle through available voices
       q / quit     - Stop and exit
       h / help     - Show this help
@@ -524,6 +529,9 @@ stdinSource.setEventHandler {
             arnold.speakEvent("Arnold is back! I will push you to the limit!")
         }
         printStatus("Arnold coach: \(newState ? "ON" : "OFF")")
+    case "m", "mute":
+        let nowMuted = arnold.toggleMute()
+        printStatus("Voice quotes: \(nowMuted ? "MUTED" : "UNMUTED")")
     case "v", "voice":
         let voices = ["Alex", "Daniel", "Fred", "Ralph", "Rishi"]
         let currentIdx = voices.firstIndex(of: arnold.voice) ?? 0

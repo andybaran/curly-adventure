@@ -221,6 +221,7 @@ final class ArnoldCoach {
 
     /// Play an audio file using macOS `afplay` (built-in, supports mp3/wav/m4a/aac/aiff).
     private func playClip(_ url: URL) {
+        guard !muted else { return }
         isSpeaking = true
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let process = Process()
@@ -272,8 +273,17 @@ final class ArnoldCoach {
 
     private(set) var enabled = true
 
+    /// When muted, Arnold still tracks zones but produces no audio output.
+    private(set) var muted = false
+
+    func toggleMute() -> Bool {
+        muted = !muted
+        return muted
+    }
+
     /// Use macOS `say` command as TTS fallback when no audio clips are available.
     private func speak(_ text: String) {
+        guard !muted else { return }
         isSpeaking = true
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
