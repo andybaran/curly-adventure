@@ -176,7 +176,7 @@ final class ANTHeartRateMonitor {
             &usbDeviceInterfaceID,
             &deviceInterfacePtr
         )
-        plugIn.pointee?.pointee.Release(plugIn)
+        _ = plugIn.pointee?.pointee.Release(plugIn)
 
         guard queryResult == S_OK,
               let rawDeviceInterface = deviceInterfacePtr else {
@@ -206,10 +206,10 @@ final class ANTHeartRateMonitor {
 
     private func findInterface(device: UnsafeMutablePointer<UnsafeMutablePointer<IOUSBDeviceInterface>>) -> Bool {
         // Set configuration
-        var configDesc = IOUSBConfigurationDescriptorPtr(nil)
-        device.pointee.pointee.GetConfigurationDescriptorPtr(device, 0, &configDesc)
+        var configDesc: IOUSBConfigurationDescriptorPtr? = nil
+        _ = device.pointee.pointee.GetConfigurationDescriptorPtr(device, 0, &configDesc)
         if let config = configDesc {
-            device.pointee.pointee.SetConfiguration(device, config.pointee.bConfigurationValue)
+            _ = device.pointee.pointee.SetConfiguration(device, config.pointee.bConfigurationValue)
         }
 
         var request = IOUSBFindInterfaceRequest(
@@ -220,7 +220,7 @@ final class ANTHeartRateMonitor {
         )
 
         var interfaceIterator: io_iterator_t = 0
-        device.pointee.pointee.CreateInterfaceIterator(device, &request, &interfaceIterator)
+        _ = device.pointee.pointee.CreateInterfaceIterator(device, &request, &interfaceIterator)
         defer { IOObjectRelease(interfaceIterator) }
 
         let usbInterface = IOIteratorNext(interfaceIterator)
@@ -233,7 +233,7 @@ final class ANTHeartRateMonitor {
         var plugInInterface: UnsafeMutablePointer<UnsafeMutablePointer<IOCFPlugInInterface>?>?
         var score: Int32 = 0
 
-        IOCreatePlugInInterfaceForService(
+        _ = IOCreatePlugInInterfaceForService(
             usbInterface,
             kIOUSBInterfaceUserClientTypeID,
             kIOCFPlugInInterfaceID,
@@ -245,8 +245,8 @@ final class ANTHeartRateMonitor {
 
         var interfacePtr: UnsafeMutableRawPointer?
         var usbInterfaceID = CFUUIDGetUUIDBytes(kIOUSBInterfaceInterfaceID)
-        plugIn.pointee?.pointee.QueryInterface(plugIn, &usbInterfaceID, &interfacePtr)
-        plugIn.pointee?.pointee.Release(plugIn)
+        _ = plugIn.pointee?.pointee.QueryInterface(plugIn, &usbInterfaceID, &interfacePtr)
+        _ = plugIn.pointee?.pointee.Release(plugIn)
 
         guard let rawInterface = interfacePtr else { return false }
 
@@ -255,11 +255,11 @@ final class ANTHeartRateMonitor {
         )
         self.interface = typedInterface
 
-        typedInterface.pointee.pointee.USBInterfaceOpen(typedInterface)
+        _ = typedInterface.pointee.pointee.USBInterfaceOpen(typedInterface)
 
         // Find endpoint pipes
         var numEndpoints: UInt8 = 0
-        typedInterface.pointee.pointee.GetNumEndpoints(typedInterface, &numEndpoints)
+        _ = typedInterface.pointee.pointee.GetNumEndpoints(typedInterface, &numEndpoints)
 
         for i: UInt8 in 1...numEndpoints {
             var direction: UInt8 = 0
@@ -268,7 +268,7 @@ final class ANTHeartRateMonitor {
             var maxPacketSize: UInt16 = 0
             var interval: UInt8 = 0
 
-            typedInterface.pointee.pointee.GetPipeProperties(
+            _ = typedInterface.pointee.pointee.GetPipeProperties(
                 typedInterface, i, &direction, &number, &transferType, &maxPacketSize, &interval
             )
 
@@ -284,13 +284,13 @@ final class ANTHeartRateMonitor {
 
     private func closeUSB() {
         if let iface = interface {
-            iface.pointee.pointee.USBInterfaceClose(iface)
-            iface.pointee.pointee.Release(iface)
+            _ = iface.pointee.pointee.USBInterfaceClose(iface)
+            _ = iface.pointee.pointee.Release(iface)
             interface = nil
         }
         if let device = deviceInterface {
-            device.pointee.pointee.USBDeviceClose(device)
-            device.pointee.pointee.Release(device)
+            _ = device.pointee.pointee.USBDeviceClose(device)
+            _ = device.pointee.pointee.Release(device)
             deviceInterface = nil
         }
     }
@@ -311,7 +311,7 @@ final class ANTHeartRateMonitor {
 
         var buffer = msg
         var size = UInt32(buffer.count)
-        iface.pointee.pointee.WritePipe(iface, writePipe, &buffer, size)
+        _ = iface.pointee.pointee.WritePipe(iface, writePipe, &buffer, size)
 
         // Small delay between commands for the ANT+ stick to process
         usleep(50_000)

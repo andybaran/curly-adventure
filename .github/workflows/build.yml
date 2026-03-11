@@ -22,13 +22,20 @@ jobs:
         run: swift package resolve
 
       - name: Build (debug)
-        run: swift build
+        run: swift build 2>&1 | tee build-output.txt
 
       - name: Build (release)
-        run: swift build -c release
+        run: swift build -c release 2>&1 | tee -a build-output.txt
 
       - name: Upload binary
         uses: actions/upload-artifact@v4
         with:
           name: HeartRateRecorder
           path: .build/release/HeartRateRecorder
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build-output.txt
