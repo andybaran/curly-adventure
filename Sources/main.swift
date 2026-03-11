@@ -496,11 +496,11 @@ stdinSource.setEventHandler {
     switch line {
     case "r", "record":
         recorder.startRecording()
-        arnold.speakEvent("Let's go! Time to pump that heart! Recording has started!")
+        arnold.speakEvent("Let's go! Time to pump that heart! Recording has started!", clipFolder: "start")
         printStatus("Recording started. Press 's' to stop.")
     case "s", "stop":
         recorder.stopRecording()
-        arnold.speakEvent("Great workout! You are a champion! Now rest, and come back even stronger!")
+        arnold.speakEvent("Great workout! You are a champion! Now rest, and come back even stronger!", clipFolder: "stop")
         printStatus("Recording stopped. \(recorder.samples.count) samples captured.")
     case "e", "export":
         exportData()
@@ -539,9 +539,9 @@ stdinSource.setEventHandler {
 }
 stdinSource.resume()
 
-// Entitlements note
+// Show audio clip status
+printStatus(arnold.clipStatus)
 printStatus("Note: If BLE scanning fails, the app needs Bluetooth permission.")
-printStatus("      Build with: swift build -c release")
 
 // Run the main run loop
 RunLoop.main.run()

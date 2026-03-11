@@ -95,11 +95,43 @@ HeartRateRecorder.entitlements - App entitlements for Bluetooth + USB
 
 ## Arnold Voice Coach
 
-The app includes a motivational voice coach that reads Arnold Schwarzenegger-style quotes aloud based on your heart rate zone. It uses macOS built-in text-to-speech (`say` command).
+The app includes a motivational voice coach that plays audio clips or reads Arnold-style quotes aloud based on your heart rate zone.
 
-- Quotes are triggered every ~45 seconds during recording and on HR zone changes
-- The "Alex" voice at a slow speaking rate (160 WPM) gives the most dramatic effect
+### Audio Clips (Recommended)
+
+For the best experience, add your own Arnold audio clips. Run the setup script to create the folder structure:
+
+```bash
+./setup-clips.sh
+```
+
+This creates `~/HeartRateRecorder/clips/` with subfolders:
+
+| Folder | When it plays |
+|--------|---------------|
+| `warmup/` | HR < 60% of max |
+| `easy/` | HR 60-70% |
+| `moderate/` | HR 70-80% |
+| `hard/` | HR 80-90% |
+| `max/` | HR > 90% |
+| `start/` | When you press Record |
+| `stop/` | When you press Stop |
+| `zone_change/` | When HR crosses a zone boundary |
+
+Drop `.mp3`, `.wav`, or `.m4a` files into each folder. Multiple files per folder are supported — one is picked at random each time. Empty folders fall back to TTS.
+
+**Where to get Arnold clips:**
+- Record yourself doing impressions
+- Get a personalized [Cameo](https://www.cameo.com) from Arnold himself
+- Use an AI voice tool (ElevenLabs, etc.) to generate custom lines
+- Save clips from a licensed soundboard app
+
+### TTS Fallback
+
+When no audio clips are available, the app falls back to macOS text-to-speech:
+
 - Press `v` to cycle through voices: Alex, Daniel, Fred, Ralph, Rishi
 - Press `a` to toggle the voice coach on/off
+- The "Alex" voice at 160 WPM gives the most dramatic effect
 
-**Tip:** For the best voice quality, install enhanced voices in System Settings > Accessibility > Spoken Content > System Voice > Manage Voices. The "Alex (Enhanced)" voice has significantly better quality.
+**Tip:** Install enhanced voices in System Settings > Accessibility > Spoken Content > System Voice > Manage Voices for better quality.

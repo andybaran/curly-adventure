@@ -1,7 +1,21 @@
 import Foundation
 
-/// Speaks Arnold Schwarzenegger-style motivational quotes using macOS text-to-speech.
-/// Quotes are triggered by heart rate zones and timed intervals during recording.
+/// Speaks Arnold Schwarzenegger-style motivational quotes using either:
+/// 1. **Audio clips** — Drop .mp3/.wav/.m4a files into ~/HeartRateRecorder/clips/
+/// 2. **macOS TTS fallback** — Uses `say` command when no clips are available
+///
+/// Audio clip folder structure:
+///   ~/HeartRateRecorder/clips/
+///     warmup/       — Played when HR < 60% max
+///     easy/         — Played when HR 60-70% max
+///     moderate/     — Played when HR 70-80% max
+///     hard/         — Played when HR 80-90% max
+///     max/          — Played when HR > 90% max
+///     start/        — Played when recording starts
+///     stop/         — Played when recording stops
+///     zone_change/  — Played on HR zone transitions
+///
+/// Put any number of audio files in each folder. One will be picked at random.
 final class ArnoldCoach {
 
     /// HR zone thresholds (percentage of estimated max HR).
@@ -16,15 +30,35 @@ final class ArnoldCoach {
     /// Minimum seconds between quotes so Arnold doesn't talk over himself.
     var minInterval: TimeInterval = 45
 
+    /// Base directory for audio clips.
+    let clipsDir: URL = {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        return home.appendingPathComponent("HeartRateRecorder/clips")
+    }()
+
+    /// Cache of discovered audio files per subfolder.
+    private var clipCache: [String: [URL]] = [:]
+    private var clipsAvailable = false
+
     enum Zone: Int, CaseIterable {
         case warmup = 1   // < 60% max
         case easy = 2     // 60-70%
         case moderate = 3 // 70-80%
         case hard = 4     // 80-90%
         case max = 5      // 90%+
+
+        var folderName: String {
+            switch self {
+            case .warmup:   return "warmup"
+            case .easy:     return "easy"
+            case .moderate: return "moderate"
+            case .hard:     return "hard"
+            case .max:      return "max"
+            }
+        }
     }
 
-    // MARK: - Quote Database
+    // MARK: - TTS Quote Database (fallback when no clips)
 
     private let warmupQuotes = [
         "Come on, let's get that heart pumping! You are not here to rest!",
@@ -88,6 +122,47 @@ final class ArnoldCoach {
         ],
     ]
 
+    // MARK: - Initialization
+
+    init() {
+        scanForClips()
+    }
+
+    /// Scan the clips directory for audio files and cache results.
+    func scanForClips() {
+        clipCache.removeAll()
+        let fm = FileManager.default
+        let audioExtensions: Set<String> = ["mp3", "wav", "m4a", "aac", "aiff", "caf"]
+
+        let subfolders = ["warmup", "easy", "moderate", "hard", "max", "start", "stop", "zone_change"]
+        var totalClips = 0
+
+        for folder in subfolders {
+            let folderURL = clipsDir.appendingPathComponent(folder)
+            guard let files = try? fm.contentsOfDirectory(at: folderURL, includingPropertiesForKeys: nil) else {
+                continue
+            }
+            let audioFiles = files.filter { audioExtensions.contains($0.pathExtension.lowercased()) }
+            if !audioFiles.isEmpty {
+                clipCache[folder] = audioFiles
+                totalClips += audioFiles.count
+            }
+        }
+
+        clipsAvailable = totalClips > 0
+    }
+
+    /// Returns a status string describing clip availability.
+    var clipStatus: String {
+        if clipsAvailable {
+            let total = clipCache.values.reduce(0) { $0 + $1.count }
+            let folders = clipCache.keys.sorted().joined(separator: ", ")
+            return "Audio clips: \(total) files in [\(folders)]"
+        } else {
+            return "No audio clips found. Using TTS. Add clips to: \(clipsDir.path)"
+        }
+    }
+
     // MARK: - Public Interface
 
     func setEnabled(_ on: Bool) {
@@ -102,30 +177,62 @@ final class ArnoldCoach {
         let now = Date()
 
         // Speak on zone change (with cooldown)
-        if zone != lastZone, let zoneQuotes = zoneChangeQuotes[zone] {
+        if zone != lastZone {
             if shouldSpeak(now: now, minGap: 20) {
-                speak(zoneQuotes.randomElement()!)
+                if let clip = randomClip(from: "zone_change") {
+                    playClip(clip)
+                } else if let zoneQuotes = zoneChangeQuotes[zone] {
+                    speak(zoneQuotes.randomElement()!)
+                }
                 lastQuoteTime = now
             }
         }
 
         // Periodic motivational quote
         if shouldSpeak(now: now, minGap: minInterval) {
-            let quote = randomQuote(for: zone)
-            speak(quote)
+            if let clip = randomClip(from: zone.folderName) {
+                playClip(clip)
+            } else {
+                let quote = randomQuote(for: zone)
+                speak(quote)
+            }
             lastQuoteTime = now
         }
 
         lastZone = zone
     }
 
-    /// Speak a one-time quote (e.g., on recording start/stop).
-    func speakEvent(_ text: String) {
+    /// Speak/play a one-time event (e.g., on recording start/stop).
+    func speakEvent(_ text: String, clipFolder: String? = nil) {
         guard enabled else { return }
-        speak(text)
+        if let folder = clipFolder, let clip = randomClip(from: folder) {
+            playClip(clip)
+        } else {
+            speak(text)
+        }
     }
 
-    // MARK: - Private
+    // MARK: - Audio Clip Playback
+
+    /// Pick a random clip from the given subfolder, or nil if none available.
+    private func randomClip(from folder: String) -> URL? {
+        return clipCache[folder]?.randomElement()
+    }
+
+    /// Play an audio file using macOS `afplay` (built-in, supports mp3/wav/m4a/aac/aiff).
+    private func playClip(_ url: URL) {
+        isSpeaking = true
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/afplay")
+            process.arguments = [url.path]
+            try? process.run()
+            process.waitUntilExit()
+            self?.isSpeaking = false
+        }
+    }
+
+    // MARK: - TTS Fallback
 
     private func zoneFor(hr: Int) -> Zone {
         let pct = Double(hr) / Double(maxHR) * 100
@@ -158,8 +265,6 @@ final class ArnoldCoach {
 
     /// The macOS voice to use. "Alex" is a deep male voice; "Daniel" (British) or
     /// "Fred" are alternatives. Set via the `voice` property.
-    /// For a more Arnold-like experience, install "Enhanced" voices in
-    /// System Settings > Accessibility > Spoken Content > System Voice > Manage Voices.
     var voice = "Alex"
 
     /// Speaking rate (words per minute). Lower = slower/more dramatic. Default 160.
@@ -167,10 +272,7 @@ final class ArnoldCoach {
 
     private(set) var enabled = true
 
-    /// Use macOS `say` command. The built-in voices can't perfectly replicate Arnold,
-    /// but "Alex" at a slow rate with dramatic text gets surprisingly close.
-    /// For the real Arnold experience, install the "Daniel (Enhanced)" British voice
-    /// which has a heavier, more accented quality at slow speeds.
+    /// Use macOS `say` command as TTS fallback when no audio clips are available.
     private func speak(_ text: String) {
         isSpeaking = true
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
