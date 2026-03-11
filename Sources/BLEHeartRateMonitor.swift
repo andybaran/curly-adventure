@@ -11,6 +11,8 @@ final class BLEHeartRateMonitor: NSObject, CBCentralManagerDelegate, CBPeriphera
 
     private var centralManager: CBCentralManager!
     private var connectedPeripheral: CBPeripheral?
+    private var reconnectAttempt: Int = 0
+    private var reconnectTimer: Timer?
 
     var onHeartRate: ((Int) -> Void)?
     var onStatusChange: ((String) -> Void)?
@@ -36,12 +38,25 @@ final class BLEHeartRateMonitor: NSObject, CBCentralManagerDelegate, CBPeriphera
     }
 
     func stop() {
+        reconnectTimer?.invalidate()
+        reconnectTimer = nil
         centralManager.stopScan()
         if let peripheral = connectedPeripheral {
             centralManager.cancelPeripheralConnection(peripheral)
         }
         connectedPeripheral = nil
         isConnected = false
+    }
+
+    /// Rescan with exponential backoff (2, 4, 8, 16, 30s cap) to avoid hammering Bluetooth.
+    private func scanWithBackoff() {
+        reconnectAttempt += 1
+        let delay = min(30.0, Double(2 << min(reconnectAttempt, 4)))
+        onStatusChange?("[BLE] Will rescan in \(Int(delay))s...")
+        reconnectTimer?.invalidate()
+        reconnectTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+            self?.startScanning()
+        }
     }
 
     // MARK: - CBCentralManagerDelegate
@@ -79,24 +94,25 @@ final class BLEHeartRateMonitor: NSObject, CBCentralManagerDelegate, CBPeriphera
         let name = peripheral.name ?? "Unknown"
         onStatusChange?("[BLE] Connected to \(name)")
         isConnected = true
+        reconnectAttempt = 0 // Reset backoff on successful connection
         peripheral.discoverServices([Self.heartRateServiceUUID])
     }
 
     func centralManager(_ central: CBCentralManager,
                         didDisconnectPeripheral peripheral: CBPeripheral,
                         error: Error?) {
-        onStatusChange?("[BLE] Disconnected. Rescanning...")
+        onStatusChange?("[BLE] Disconnected from \(peripheral.name ?? "device").")
         isConnected = false
         connectedPeripheral = nil
-        startScanning()
+        scanWithBackoff()
     }
 
     func centralManager(_ central: CBCentralManager,
                         didFailToConnect peripheral: CBPeripheral,
                         error: Error?) {
-        onStatusChange?("[BLE] Failed to connect: \(error?.localizedDescription ?? "unknown error"). Rescanning...")
+        onStatusChange?("[BLE] Failed to connect: \(error?.localizedDescription ?? "unknown error").")
         connectedPeripheral = nil
-        startScanning()
+        scanWithBackoff()
     }
 
     // MARK: - CBPeripheralDelegate

@@ -32,9 +32,9 @@ final class FITExporter {
 
         let startTime = samples.first!.timestamp
         let endTime = samples.last!.timestamp
-        let elapsed = UInt32(endTime.timeIntervalSince(startTime))
-        let avgHR = UInt8(samples.reduce(0) { $0 + $1.heartRate } / samples.count)
-        let maxHR = UInt8(samples.map(\.heartRate).max() ?? 0)
+        let elapsed = UInt32(min(endTime.timeIntervalSince(startTime), Double(UInt32.max)))
+        let avgHR = UInt8(min(samples.reduce(0) { $0 + $1.heartRate } / samples.count, 255))
+        let maxHR = UInt8(min(samples.map(\.heartRate).max() ?? 0, 255))
 
         // Write messages (header placeholder, then data, then fix header)
         writeFileIdMessage(timestamp: startTime)
@@ -51,7 +51,16 @@ final class FITExporter {
 
         // Build final file: header + data + CRC
         let fileData = buildFile()
-        try fileData.write(to: url)
+
+        // Atomic write: write to temp file then rename to prevent corrupt files on crash
+        let tempURL = url.deletingLastPathComponent()
+            .appendingPathComponent(".\(url.lastPathComponent).tmp")
+        try fileData.write(to: tempURL)
+        let fm = FileManager.default
+        if fm.fileExists(atPath: url.path) {
+            try fm.removeItem(at: url)
+        }
+        try fm.moveItem(at: tempURL, to: url)
     }
 
     enum ExportError: Error, LocalizedError {

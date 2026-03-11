@@ -38,6 +38,10 @@ final class ANTHeartRateMonitor {
     private var writePipe: UInt8 = 0
     private var running = false
     private var readThread: Thread?
+    private var reconnectTimer: Timer?
+    private var consecutiveErrors: Int = 0
+    private var reconnectAttempt: Int = 0
+    private var stopped = false
 
     var onHeartRate: ((Int) -> Void)?
     var onStatusChange: ((String) -> Void)?
@@ -45,13 +49,31 @@ final class ANTHeartRateMonitor {
     private(set) var isConnected = false
 
     func start() {
+        stopped = false
+        reconnectAttempt = 0
+        attemptConnection()
+    }
+
+    private func attemptConnection() {
+        guard !stopped else { return }
+
         onStatusChange?("[ANT+] Searching for ANT+ USB stick...")
 
         guard findAndOpenANTStick() else {
-            onStatusChange?("[ANT+] No ANT+ USB stick found. Make sure it's plugged in.")
+            reconnectAttempt += 1
+            let delay = min(30.0, Double(2 << min(reconnectAttempt, 4))) // 2, 4, 8, 16, 30s cap
+            onStatusChange?("[ANT+] No ANT+ USB stick found. Retrying in \(Int(delay))s...")
+            DispatchQueue.main.async {
+                self.reconnectTimer?.invalidate()
+                self.reconnectTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+                    self?.attemptConnection()
+                }
+            }
             return
         }
 
+        reconnectAttempt = 0
+        consecutiveErrors = 0
         onStatusChange?("[ANT+] ANT+ stick found. Configuring...")
         isConnected = true
 
@@ -65,8 +87,30 @@ final class ANTHeartRateMonitor {
         readThread?.start()
     }
 
-    func stop() {
+    private func handleDisconnect(reason: String) {
         running = false
+        readThread = nil
+        closeUSB()
+        isConnected = false
+
+        guard !stopped else { return }
+
+        reconnectAttempt += 1
+        let delay = min(30.0, Double(2 << min(reconnectAttempt, 4)))
+        DispatchQueue.main.async {
+            self.onStatusChange?("[ANT+] \(reason) Reconnecting in \(Int(delay))s...")
+            self.reconnectTimer?.invalidate()
+            self.reconnectTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+                self?.attemptConnection()
+            }
+        }
+    }
+
+    func stop() {
+        stopped = true
+        running = false
+        reconnectTimer?.invalidate()
+        reconnectTimer = nil
         readThread?.cancel()
         readThread = nil
         closeUSB()
@@ -319,9 +363,16 @@ final class ANTHeartRateMonitor {
             let result = iface.pointee.pointee.ReadPipe(iface, readPipe, &buffer, &bytesRead)
 
             if result == kIOReturnSuccess && bytesRead > 0 {
+                consecutiveErrors = 0
                 parseANTMessages(Array(buffer[0..<Int(bytesRead)]))
             } else if result != kIOReturnSuccess {
-                usleep(10_000) // Brief pause on error
+                consecutiveErrors += 1
+                if consecutiveErrors >= 50 {
+                    // USB stick likely disconnected or failed
+                    handleDisconnect(reason: "USB read errors exceeded threshold.")
+                    return
+                }
+                usleep(50_000) // 50ms pause on error before retry
             }
         }
     }

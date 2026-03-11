@@ -51,8 +51,11 @@ final class HeartRateRecorder {
         isRecording = false
     }
 
+    /// Physiologically valid HR range. Values outside this are sensor noise.
+    static let validHRRange = 30...250
+
     func addSample(heartRate: Int, source: Source) {
-        guard isRecording, heartRate > 0 else { return }
+        guard isRecording, Self.validHRRange.contains(heartRate) else { return }
         let sample = Sample(timestamp: Date(), heartRate: heartRate, source: source)
         samples.append(sample)
     }

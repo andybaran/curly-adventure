@@ -15,7 +15,25 @@ let arnold = ArnoldCoach()
 
 var lastBLEHR: Int?
 var lastANTHR: Int?
+var lastBLETime: Date?
+var lastANTTime: Date?
 var displayTimer: Timer?
+var autoSaveTimer: Timer?
+var pendingRecordConfirm = false
+
+/// How many seconds before we consider HR data stale and show "---"
+let hrStaleThreshold: TimeInterval = 5.0
+
+/// Returns a non-stale HR value, preferring BLE over ANT+.
+func freshHR() -> Int? {
+    let now = Date()
+    let bleOK = lastBLEHR != nil && lastBLETime != nil && now.timeIntervalSince(lastBLETime!) < hrStaleThreshold
+    let antOK = lastANTHR != nil && lastANTTime != nil && now.timeIntervalSince(lastANTTime!) < hrStaleThreshold
+
+    if bleOK { return lastBLEHR }
+    if antOK { return lastANTHR }
+    return nil
+}
 
 // ============================================================================
 // MARK: - ANSI Color Codes (Hospital Monitor Palette)
@@ -233,7 +251,7 @@ func padLeft(_ s: String, _ width: Int) -> String {
 func renderDisplay() {
     moveCursorUp(displayLines)
 
-    let hr = recorder.currentHR ?? lastBLEHR ?? lastANTHR
+    let hr = freshHR()
     let elapsed = recorder.duration
     let mins = Int(elapsed) / 60
     let secs = Int(elapsed) % 60
@@ -381,7 +399,9 @@ func printStatus(_ msg: String) {
 // ============================================================================
 
 bleMonitor.onHeartRate = { hr in
+    guard HeartRateRecorder.validHRRange.contains(hr) else { return }
     lastBLEHR = hr
+    lastBLETime = Date()
     recorder.addSample(heartRate: hr, source: .ble)
     if recorder.isRecording { arnold.processHeartRate(hr) }
 }
@@ -399,7 +419,9 @@ bleMonitor.onDeviceFound = { msg in
 // ============================================================================
 
 antMonitor.onHeartRate = { hr in
+    guard HeartRateRecorder.validHRRange.contains(hr) else { return }
     lastANTHR = hr
+    lastANTTime = Date()
     recorder.addSample(heartRate: hr, source: .ant)
     if recorder.isRecording { arnold.processHeartRate(hr) }
 }
@@ -428,6 +450,14 @@ func printHelp() {
     """)
 }
 
+/// Returns the export directory (Downloads or current directory as fallback).
+func exportDirectory() -> URL {
+    if let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first {
+        return downloads
+    }
+    return URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+}
+
 func exportData() {
     guard !recorder.samples.isEmpty else {
         print("  No data to export. Record some data first.")
@@ -437,21 +467,58 @@ func exportData() {
     let formatter = DateFormatter()
     formatter.dateFormat = "yyyy-MM-dd_HHmmss"
     let filename = "heart_rate_\(formatter.string(from: Date())).fit"
-
-    let url: URL
-    if let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first {
-        url = downloads.appendingPathComponent(filename)
-    } else {
-        url = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent(filename)
-    }
+    let url = exportDirectory().appendingPathComponent(filename)
 
     do {
         try exporter.export(samples: recorder.samples, to: url)
         print("  Exported \(recorder.samples.count) samples to: \(url.path)")
         print("  Upload to Garmin Connect at: https://connect.garmin.com/modern/import-data")
+        // Clean up any auto-save backup since we have a proper export now
+        let backupURL = exportDirectory().appendingPathComponent("heart_rate_autosave.fit")
+        try? FileManager.default.removeItem(at: backupURL)
     } catch {
         print("  Export failed: \(error.localizedDescription)")
     }
+}
+
+/// Silently saves a backup FIT file during recording. Overwrites previous backup.
+func autoSave() {
+    guard recorder.isRecording, !recorder.samples.isEmpty else { return }
+    let url = exportDirectory().appendingPathComponent("heart_rate_autosave.fit")
+    do {
+        try exporter.export(samples: recorder.samples, to: url)
+    } catch {
+        // Silent — auto-save failures should not interrupt the user
+    }
+}
+
+// ============================================================================
+// MARK: - Clean Shutdown & Signal Handling
+// ============================================================================
+
+func cleanShutdown() {
+    recorder.stopRecording()
+    if !recorder.samples.isEmpty {
+        print("\n  Auto-exporting \(recorder.samples.count) samples before exit...")
+        exportData()
+    }
+    bleMonitor.stop()
+    antMonitor.stop()
+    displayTimer?.invalidate()
+    autoSaveTimer?.invalidate()
+    print("\u{1B}[?25h", terminator: "") // Show cursor
+    print("\(C.reset)  Goodbye!")
+}
+
+// Trap SIGINT (Ctrl+C) and SIGTERM for clean shutdown
+for sig: Int32 in [SIGINT, SIGTERM] {
+    let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
+    source.setEventHandler {
+        cleanShutdown()
+        exit(0)
+    }
+    source.resume()
+    signal(sig, SIG_IGN) // Let DispatchSource handle it instead of default behavior
 }
 
 // ============================================================================
@@ -498,29 +565,40 @@ let stdinSource = DispatchSource.makeReadSource(fileDescriptor: STDIN_FILENO, qu
 stdinSource.setEventHandler {
     guard let line = readLine()?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() else { return }
 
+    // Reset record confirmation if user types anything other than 'r'
+    if line != "r" && line != "record" { pendingRecordConfirm = false }
+
     switch line {
     case "r", "record":
+        if !recorder.samples.isEmpty && !recorder.isRecording {
+            printStatus("WARNING: \(recorder.samples.count) samples exist. Export first or press 'r' again to overwrite.")
+            // Set a flag so next 'r' actually starts
+            if pendingRecordConfirm {
+                pendingRecordConfirm = false
+            } else {
+                pendingRecordConfirm = true
+                break
+            }
+        }
+        pendingRecordConfirm = false
         recorder.startRecording()
         arnold.speakEvent("Let's go! Time to pump that heart! Recording has started!", clipFolder: "start")
         printStatus("Recording started. Press 's' to stop.")
+        // Start auto-save timer (every 60s)
+        autoSaveTimer?.invalidate()
+        autoSaveTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in
+            autoSave()
+        }
     case "s", "stop":
         recorder.stopRecording()
+        autoSaveTimer?.invalidate()
+        autoSaveTimer = nil
         arnold.speakEvent("Great workout! You are a champion! Now rest, and come back even stronger!", clipFolder: "stop")
         printStatus("Recording stopped. \(recorder.samples.count) samples captured.")
     case "e", "export":
         exportData()
     case "q", "quit", "exit":
-        recorder.stopRecording()
-        if !recorder.samples.isEmpty {
-            print("  Auto-exporting before exit...")
-            exportData()
-        }
-        bleMonitor.stop()
-        antMonitor.stop()
-        displayTimer?.invalidate()
-        // Show cursor again
-        print("\u{1B}[?25h", terminator: "")
-        print("\(C.reset)  Goodbye!")
+        cleanShutdown()
         exit(0)
     case "a", "arnold":
         let newState = !arnold.enabled
