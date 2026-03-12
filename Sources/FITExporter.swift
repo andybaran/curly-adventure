@@ -317,11 +317,11 @@ final class FITExporter {
 extension Data {
     mutating func appendUInt16(_ value: UInt16) {
         var v = value.littleEndian
-        withUnsafeBytes(of: &v) { append(contentsOf: $0) }
+        Swift.withUnsafeBytes(of: &v) { append(contentsOf: $0) }
     }
 
     mutating func appendUInt32(_ value: UInt32) {
         var v = value.littleEndian
-        withUnsafeBytes(of: &v) { append(contentsOf: $0) }
+        Swift.withUnsafeBytes(of: &v) { append(contentsOf: $0) }
     }
 }

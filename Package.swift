@@ -9,7 +9,8 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "HeartRateRecorder",
-            path: "Sources"
+            path: "Sources",
+            exclude: ["Info.plist"]
         )
     ]
 )

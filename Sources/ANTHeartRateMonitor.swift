@@ -2,6 +2,33 @@ import Foundation
 import IOKit
 import IOKit.usb
 
+// MARK: - IOKit USB UUID constants (not importable as Swift constants from C macros)
+
+private let kIOUSBDeviceUserClientTypeID_: CFUUID =
+    CFUUIDGetConstantUUIDWithBytes(nil,
+        0x9d, 0xc7, 0xb7, 0x80, 0x9e, 0xc0, 0x11, 0xD4,
+        0xa5, 0x4f, 0x00, 0x0a, 0x27, 0x05, 0x28, 0x61)
+
+private let kIOCFPlugInInterfaceID_: CFUUID =
+    CFUUIDGetConstantUUIDWithBytes(nil,
+        0xC2, 0x44, 0xE8, 0x58, 0x10, 0x9C, 0x11, 0xD4,
+        0x91, 0xD4, 0x00, 0x50, 0xE4, 0xC6, 0x42, 0x6F)
+
+private let kIOUSBDeviceInterfaceID_: CFUUID =
+    CFUUIDGetConstantUUIDWithBytes(nil,
+        0x5c, 0x81, 0x87, 0xd0, 0x9e, 0xf3, 0x11, 0xD4,
+        0x8b, 0x45, 0x00, 0x0a, 0x27, 0x05, 0x28, 0x61)
+
+private let kIOUSBInterfaceUserClientTypeID_: CFUUID =
+    CFUUIDGetConstantUUIDWithBytes(nil,
+        0x2d, 0x97, 0x86, 0xc6, 0x9e, 0xf3, 0x11, 0xD4,
+        0xad, 0x51, 0x00, 0x0a, 0x27, 0x05, 0x28, 0x61)
+
+private let kIOUSBInterfaceInterfaceID_: CFUUID =
+    CFUUIDGetConstantUUIDWithBytes(nil,
+        0x73, 0xc9, 0x7a, 0xe8, 0x9e, 0xf3, 0x11, 0xD4,
+        0xb1, 0xd0, 0x00, 0x0a, 0x27, 0x05, 0x28, 0x61)
+
 /// ANT+ Heart Rate Monitor — communicates with a USB ANT+ stick (e.g., Garmin USB-m)
 /// to receive HR data from ANT+ heart rate straps.
 ///
@@ -158,8 +185,8 @@ final class ANTHeartRateMonitor {
 
         let kr = IOCreatePlugInInterfaceForService(
             service,
-            kIOUSBDeviceUserClientTypeID,
-            kIOCFPlugInInterfaceID,
+            kIOUSBDeviceUserClientTypeID_,
+            kIOCFPlugInInterfaceID_,
             &plugInInterface,
             &score
         )
@@ -170,10 +197,10 @@ final class ANTHeartRateMonitor {
         }
 
         var deviceInterfacePtr: UnsafeMutableRawPointer?
-        var usbDeviceInterfaceID = CFUUIDGetUUIDBytes(kIOUSBDeviceInterfaceID)
+        let usbDeviceInterfaceID = CFUUIDGetUUIDBytes(kIOUSBDeviceInterfaceID_)
         let queryResult = plugIn.pointee?.pointee.QueryInterface(
             plugIn,
-            &usbDeviceInterfaceID,
+            usbDeviceInterfaceID,
             &deviceInterfacePtr
         )
         _ = plugIn.pointee?.pointee.Release(plugIn)
@@ -235,8 +262,8 @@ final class ANTHeartRateMonitor {
 
         _ = IOCreatePlugInInterfaceForService(
             usbInterface,
-            kIOUSBInterfaceUserClientTypeID,
-            kIOCFPlugInInterfaceID,
+            kIOUSBInterfaceUserClientTypeID_,
+            kIOCFPlugInInterfaceID_,
             &plugInInterface,
             &score
         )
@@ -244,8 +271,8 @@ final class ANTHeartRateMonitor {
         guard let plugIn = plugInInterface else { return false }
 
         var interfacePtr: UnsafeMutableRawPointer?
-        var usbInterfaceID = CFUUIDGetUUIDBytes(kIOUSBInterfaceInterfaceID)
-        _ = plugIn.pointee?.pointee.QueryInterface(plugIn, &usbInterfaceID, &interfacePtr)
+        let usbInterfaceID = CFUUIDGetUUIDBytes(kIOUSBInterfaceInterfaceID_)
+        _ = plugIn.pointee?.pointee.QueryInterface(plugIn, usbInterfaceID, &interfacePtr)
         _ = plugIn.pointee?.pointee.Release(plugIn)
 
         guard let rawInterface = interfacePtr else { return false }
@@ -310,7 +337,7 @@ final class ANTHeartRateMonitor {
         guard let iface = interface else { return }
 
         var buffer = msg
-        var size = UInt32(buffer.count)
+        let size = UInt32(buffer.count)
         _ = iface.pointee.pointee.WritePipe(iface, writePipe, &buffer, size)
 
         // Small delay between commands for the ANT+ stick to process
